@@ -1,0 +1,107 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{parskip}
+
+\title{Marswalk: Project Plan and Handoff}
+\author{Hackathon team}
+\date{Deadline: 13 November 2026, midnight (local time)}
+
+\begin{document}
+\maketitle
+
+\section{Goal}
+Build an interactive map that a Mars astronaut could use to plan and carry out a surface excursion at Gale Crater. The map layers NASA data (optical imagery, topography, and steep-terrain hazard areas), shows science stops and a route, and gives crew-facing context for each stop.
+
+\section{Current status}
+\begin{itemize}[leftmargin=*]
+  \item[\textcolor{green!50!black}{[done]}] Leaflet map in the Mars Trek equirectangular projection (EPSG:4326), centered on Gale Crater.
+  \item[\textcolor{green!50!black}{[done]}] Base layers: Viking color mosaic (optical) and MOLA shaded relief (topography).
+  \item[\textcolor{green!50!black}{[done]}] Base point and three science stops, each with a summary and objective.
+  \item[\textcolor{green!50!black}{[done]}] Dashed route from base through the stops and back.
+  \item[\textcolor{green!50!black}{[done]}] Steep-terrain hazard layer computed from MOLA elevation (slope over $15^\circ$), saved as \texttt{steep.geojson}.
+  \item[\textcolor{orange!80!black}{[todo]}] Confirm \texttt{steep.geojson} loads and the hazard areas appear on the map.
+  \item[\textcolor{orange!80!black}{[todo]}] Route does not yet avoid hazard areas.
+  \item[\textcolor{orange!80!black}{[todo]}] No Curiosity measurements (chemistry, radiation) attached to stops yet.
+\end{itemize}
+
+\section{Repository layout}
+\begin{description}[leftmargin=2.5cm, style=nextline]
+  \item[\texttt{src/App.tsx}] Main page: map, layer controls, stop sidebar, route, and hazard layer.
+  \item[\texttt{src/data/site.ts}] Mission data: base point, stops (coordinates and text), route waypoints.
+  \item[\texttt{src/App.css}, \texttt{src/index.css}] Styling. \texttt{index.css} must contain only the short global block (no template rules).
+  \item[\texttt{public/steep.geojson}] Hazard polygons. Must sit directly in \texttt{public/}, not a subfolder.
+  \item[\texttt{docs/PROJECT\_PLAN.tex}] This document.
+\end{description}
+
+\section{Running the app}
+\begin{enumerate}[leftmargin=*]
+  \item Install Node.js (LTS version) if it is not installed.
+  \item Open a terminal in the project folder and run:
+\begin{verbatim}
+npm install
+npm run dev
+\end{verbatim}
+  \item Open the local address printed in the terminal (usually \texttt{http://localhost:5173}).
+  \item Check that \texttt{http://localhost:5173/steep.geojson} shows JSON text. If it shows ``Not Found,'' the file is in the wrong place.
+\end{enumerate}
+
+\section{Hazard data pipeline (already run once)}
+The steep-terrain file was produced with GDAL (we used the conda-forge build on Windows). Re-run these steps only if you change the crop area or the threshold.
+
+\begin{enumerate}[leftmargin=*]
+  \item Download the MOLA elevation mosaic (about 2 GB):
+\begin{verbatim}
+curl -L -O https://planetarymaps.usgs.gov/mosaic/Mars_MGS_MOLA_DEM_mosaic_global_463m.tif
+\end{verbatim}
+  \item Crop to Gale Crater. The file is in meters, not degrees. The box is 134--141$^\circ$E, 2--8$^\circ$S, using about 59{,}276 m per degree:
+\begin{verbatim}
+gdal_translate -projwin 7943051 -118553 8358986 -474212 Mars_MGS_MOLA_DEM_mosaic_global_463m.tif gale.tif
+\end{verbatim}
+  \item Compute slope in degrees (no \texttt{-s} option, because the file is already in meters):
+\begin{verbatim}
+gdaldem slope gale.tif slope.tif -compute_edges
+\end{verbatim}
+  \item Mark cells steeper than $15^\circ$:
+\begin{verbatim}
+python "C:\Users\HP\miniconda3\envs\gdal\Scripts\gdal_calc.py" -A slope.tif --calc="A>15" --outfile=steep.tif --type=Byte --NoDataValue=0
+\end{verbatim}
+  \item Convert marked cells to polygons:
+\begin{verbatim}
+gdal raster polygonize steep.tif steep.geojson
+\end{verbatim}
+  \item Copy \texttt{steep.geojson} into \texttt{public/}.
+\end{enumerate}
+
+\textbf{Limit to state on the map:} at 463 m per pixel, the layer shows broad steep terrain, not individual rocks. Individual hazards would need high-resolution imagery such as HiRISE.
+
+\section{Known issues}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Viking layer URL.} The Viking tile ID was taken from the Mars Trek API page. It must be checked in a browser. Test: \texttt{https://trek.nasa.gov/tiles/Mars/EQ/Mars\_Viking\_MDIM21\_ClrMosaic\_global\_232m/1.0.0/WMTSCapabilities.xml}.
+  \item \textbf{Stop coordinates are estimates.} Check them against NASA's published Curiosity locations before submitting.
+  \item \textbf{Hazard fetch fails silently.} If \texttt{steep.geojson} is missing, the map shows no hazards and no error. Check the URL in the first place.
+  \item \textbf{Remote access.} The Mars Trek tiles load from the user's browser, not from the build. Some networks may block them.
+\end{itemize}
+
+\section{Remaining tasks, in priority order}
+\begin{enumerate}[leftmargin=*]
+  \item Confirm the hazard layer displays (see Known issues). Zoom to Base to check.
+  \item Confirm both base layers load.
+  \item Add real science content to each stop: Curiosity measurements or published results (for example chemistry or radiation), with sources cited on the page.
+  \item Make the route avoid hazard areas, or add a warning when a leg crosses one.
+  \item Add a crew-facing note for each stop (what the crew will see, what to do there).
+  \item Prepare the presentation: state the data sources, the $15^\circ$ threshold, and the 463 m resolution limit.
+  \item Commit everything, including \texttt{public/steep.geojson}, and push. Note that GitHub may need the Claude GitHub App installed for the owner account before pushing from this environment.
+\end{enumerate}
+
+\section{Notes for the next person}
+\begin{itemize}[leftmargin=*]
+  \item Most of the logic lives in \texttt{src/App.tsx} and the stop data lives in \texttt{src/data/site.ts}. Start there.
+  \item The map uses an equirectangular projection (\texttt{L.CRS.EPSG4326}). Do not switch it to the default web-mercator projection, or the Mars tiles will not line up.
+  \item Coordinates in \texttt{site.ts} are \texttt{[latitude, longitude]}. Leaflet uses the same order.
+\end{itemize}
+
+\end{document}
